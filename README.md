@@ -1,8 +1,5 @@
 # Query-Adaptive Multimodal Self-RAG for Evidence-Grounded Medical Reasoning in Epilepsy Analysis
 
-> **Minor Project [ARP-455]**  
-> **Author**: Parth Saini (06219051923)  
-> **Supervisor**: Dr. Ruchika Lalit, Assistant Professor, USAR  
 
 ---
 
