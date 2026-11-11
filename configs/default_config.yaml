@@ -1,0 +1,62 @@
+# Default configuration for Query-Adaptive Multimodal Self-RAG for Epilepsy Analysis
+# Project: ARP-455
+
+project:
+  name: "Query-Adaptive Multimodal Self-RAG for Epilepsy Analysis"
+  version: "0.1.0"
+  random_seed: 42
+
+paths:
+  data_dir: "data"
+  raw_eeg_dir: "data/raw/eeg"
+  raw_doc_dir: "data/raw/documents"
+  raw_kg_dir: "data/raw/kg"
+  processed_eeg_dir: "data/processed/eeg_windows"
+  processed_kg_dir: "data/processed/kg_graph"
+  vector_db_dir: "data/vector_db"
+  mock_triplets_path: "data/raw/kg/optimus_kg_epilepsy.csv"
+  sample_pdf_path: "data/raw/documents/sample_epilepsy.pdf"
+  default_edf_path: "data/raw/eeg/chb01/chb01_03.edf"
+
+eeg:
+  sfreq: 256
+  n_channels: 23
+  window_sec: 4
+  stride_sec: 2
+  embed_dim: 128
+  bandpass_low: 0.5
+  bandpass_high: 60.0
+  notch_freq: 60.0
+
+knowledge_graph:
+  triplets_path: "data/raw/kg/optimus_kg_epilepsy.csv"
+  keywords:
+    - "epilepsy"
+    - "seizure"
+    - "temporal"
+    - "frontal"
+  default_hops: 1
+  max_subgraph_nodes: 20
+
+vector_store:
+  embedding_model: "BAAI/bge-small-en-v1.5"
+  chunk_size: 500
+  chunk_overlap: 50
+  top_k: 3
+
+routing:
+  tau: 0.5                      # Activation threshold for sources [0.0, 1.0]
+  extractor_backend: "auto"     # "auto" | "ner" | "llm" | "lexicon"
+  modules:
+    s_vector: "Vector"
+    s_graph: "Graph"
+    s_eeg: "EEG"
+
+self_rag:
+  max_refinement_steps: 2
+  confidence_threshold: 0.6
+  enable_critique: true
+
+api:
+  host: "0.0.0.0"
+  port: 8000

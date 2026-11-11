@@ -1,0 +1,51 @@
+[
+  {
+    "id": 1,
+    "query": "What is epilepsy?",
+    "category": "definitional",
+    "expected_sources": ["Vector"],
+    "description": "Pure definition question, requires medical literature only."
+  },
+  {
+    "id": 2,
+    "query": "What brain regions are associated with focal seizures?",
+    "category": "relational",
+    "expected_sources": ["Vector", "Graph"],
+    "description": "Relational question connecting anatomical regions with seizure classification."
+  },
+  {
+    "id": 3,
+    "query": "Does this EEG support focal epilepsy?",
+    "category": "eeg_grounded",
+    "expected_sources": ["Vector", "Graph", "EEG"],
+    "description": "Clinical diagnostic question requiring signal interpretation against medical knowledge."
+  },
+  {
+    "id": 4,
+    "query": "Does this patient's EEG show rhythmic spiking?",
+    "category": "eeg_signal",
+    "expected_sources": ["EEG"],
+    "description": "Pure electrographic signal pattern question without diagnostic reasoning."
+  },
+  {
+    "id": 5,
+    "query": "What EEG characteristics are associated with focal epilepsy?",
+    "category": "relational",
+    "expected_sources": ["Vector", "Graph"],
+    "description": "General electrographic knowledge inquiry."
+  },
+  {
+    "id": 6,
+    "query": "What are first-line drugs for focal seizures?",
+    "category": "clinical",
+    "expected_sources": ["Vector", "Graph"],
+    "description": "Treatment and medication recommendation guidelines."
+  },
+  {
+    "id": 7,
+    "query": "Does this patient's EEG show rhythmic spiking, and what brain regions are typically affected by focal seizures?",
+    "category": "complex",
+    "expected_sources": ["EEG", "Graph", "Vector"],
+    "description": "Multi-part question requiring decomposition into atomic subqueries."
+  }
+]
