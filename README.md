@@ -103,7 +103,33 @@ d:/epilepsy/
 
 ---
 
-## 3. Quick Start & Execution
+## 3. Dataset Setup (For Collaborators)
+
+The repository comes pre-loaded with the **Harvard OptimusKG Knowledge Graph** (`data/raw/kg/optimus_kg_epilepsy.csv`, 7,920 triplets) and **Clinical Guidelines** (`data/raw/documents/`).
+
+Because the full **CHB-MIT Scalp EEG Database** is **~35 GB** with individual `.edf` files up to 177 MB (exceeding GitHub's 100 MB file limit), collaborators can download the complete dataset in parallel at gigabit speeds:
+
+### High-Speed AWS Open Data Download (Recommended)
+```powershell
+# Using the project download script (auto-detects AWS CLI):
+python scripts/download_chbmit.py --all
+
+# Or directly via AWS CLI (no AWS account or login required):
+aws s3 sync s3://physionet-open/chbmit/1.0.0/ data/raw/eeg --no-sign-request
+```
+
+### Download Specific Subjects Only (Bandwidth-Efficient)
+```powershell
+# Download only chb01, chb02, and chb03:
+python scripts/download_chbmit.py --subjects chb01 chb02 chb03
+
+# Or download only recordings that contain annotated seizures:
+python scripts/download_chbmit.py --all --seizures-only
+```
+
+---
+
+## 4. Quick Start & Execution
 
 ### 1. Run the Full Reasoning Pipeline (CLI)
 Test end-to-end query decomposition, adaptive source activation, multimodal evidence fusion, and Self-RAG reflection:
