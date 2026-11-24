@@ -66,10 +66,13 @@ class EvidenceAggregator:
             mean_p = float(probs.mean()) if probs is not None else 0.0
             max_p = float(probs.max()) if probs is not None else 0.0
             rhythmic = bool(max_p > 0.5)
+            intervals = eeg_analysis.get("detected_intervals_sec", [])
+            intervals_str = f" Electrographic seizure interval(s): {intervals} sec." if intervals else ""
             summary = (
                 f"Analyzed {int(eeg_analysis.get('n_windows', 0))} windows. "
                 f"Mean seizure prob: {mean_p:.2f}, peak seizure prob: {max_p:.2f}. "
                 f"Rhythmic spiking/seizure activity: {'Detected' if rhythmic else 'None'}."
+                f"{intervals_str}"
             )
             eeg_ev = EEGEvidence(
                 n_windows=int(eeg_analysis.get("n_windows", 0)),
