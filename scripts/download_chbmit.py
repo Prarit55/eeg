@@ -153,6 +153,7 @@ def main():
     parser.add_argument("--seizures-only", action="store_true", help="Download only recordings with annotated seizure events")
     parser.add_argument("--no-aws", action="store_true", help="Disable AWS S3 transfer and force HTTP streaming")
     parser.add_argument("--dry-run", action="store_true", help="List files to be downloaded without downloading")
+    parser.add_argument("--workers", type=int, default=4, help="Number of concurrent download threads")
     args = parser.parse_args()
 
     dest_dir = Path(args.dest)
@@ -234,13 +235,27 @@ def main():
         download_file(BASE_URL + mf, dest_dir / mf)
 
     # Download EDF recordings
-    print("\n--- Downloading EDF Recordings ---")
+    print(f"\n--- Downloading EDF Recordings ({len(files_to_download)} files with {args.workers} parallel workers) ---")
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     success_count = 0
-    for i, rec in enumerate(files_to_download, 1):
-        print(f"\n[{i}/{len(files_to_download)}] {rec}:")
-        ok = download_file(BASE_URL + rec, dest_dir / rec)
-        if ok:
-            success_count += 1
+    total_files = len(files_to_download)
+
+    def _dl_worker(item):
+        idx, rec_name = item
+        remote_u = BASE_URL + rec_name
+        local_p = dest_dir / rec_name
+        ok = download_file(remote_u, local_p)
+        return idx, rec_name, ok
+
+    items = list(enumerate(files_to_download, 1))
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(_dl_worker, it): it for it in items}
+        for future in as_completed(futures):
+            idx, rec_name, ok = future.result()
+            if ok:
+                success_count += 1
+            print(f"  [{success_count}/{total_files} completed] {rec_name}: {'OK' if ok else 'FAILED'}", flush=True)
 
     print("\n" + "=" * 80)
     print(f"Download complete! Successfully processed {success_count}/{len(files_to_download)} recordings.")

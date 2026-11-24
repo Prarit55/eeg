@@ -1,7 +1,8 @@
 """
-EEG Model Training & Window Caching Script.
-Processes real CHB-MIT recordings, generates window-level annotations,
-trains the 1D-CNN + BiLSTM EEGEncoder, evaluates seizure detection metrics,
+EEG Model Training & Multi-Subject Window Caching Script.
+Processes PhysioNet CHB-MIT recordings across subjects,
+automatically extracts window-level ground-truth annotations from the CHB registry,
+trains the 1D-CNN + BiLSTM EEGEncoder, evaluates multi-subject seizure detection metrics,
 and saves trained weights to `data/processed/eeg_encoder.pt`.
 """
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -19,21 +20,18 @@ from torch.utils.data import DataLoader, TensorDataset
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.eeg.chb_registry import get_chb_registry
 from src.eeg.loader import load_and_filter_edf
 from src.eeg.models import EEGEncoder
 from src.eeg.preprocessor import normalize_windows, segment_windows
 
-DEFAULT_EDF = Path(__file__).resolve().parent.parent / "data" / "raw" / "eeg" / "chb01" / "chb01_03.edf"
 PROCESSED_DIR = Path(__file__).resolve().parent.parent / "data" / "processed" / "eeg_windows"
 DEFAULT_WEIGHTS = Path(__file__).resolve().parent.parent / "data" / "processed" / "eeg_encoder.pt"
 
-# Known annotations for chb01_03 from chb01-summary.txt
-SEIZURE_INTERVALS = [(2996, 3036)]  # seconds
 
-
-def prepare_labeled_windows(
-    edf_path: Path | str = DEFAULT_EDF,
-    intervals: list = SEIZURE_INTERVALS,
+def prepare_recording_windows(
+    edf_path: Path | str,
+    intervals: Optional[List[Tuple[int, int]]] = None,
     window_sec: int = 4,
     stride_sec: int = 2,
     sfreq: int = 256,
@@ -41,28 +39,30 @@ def prepare_labeled_windows(
     """Slice recording into windows and label each window based on seizure intervals."""
     edf_p = Path(edf_path)
     if not edf_p.exists():
-        raise FileNotFoundError(f"EDF file not found at {edf_p}. Download it first via download_chbmit.py.")
+        raise FileNotFoundError(f"EDF file not found at {edf_p}.")
 
-    print(f"Loading and filtering EDF recording: {edf_p.name}...")
+    reg = get_chb_registry()
+    if intervals is None:
+        intervals = reg.get_seizure_intervals(edf_p.name)
+
+    print(f"Loading and filtering EDF recording: {edf_p.name} (seizure intervals: {intervals})...")
     data, actual_sfreq, ch_names = load_and_filter_edf(str(edf_p), target_sfreq=sfreq)
-    
+
     window_size = int(sfreq * window_sec)   # 1024
     stride = int(sfreq * stride_sec)        # 512
-    
-    print("Segmenting continuous signal into overlapping 4s windows (50% stride)...")
+
     raw_windows = segment_windows(data, window_size=window_size, stride=stride)
     norm_windows = normalize_windows(raw_windows)
-    
+
     n_windows = len(norm_windows)
     labels = np.zeros(n_windows, dtype=np.float32)
     timestamps = np.zeros((n_windows, 2), dtype=np.float32)
-    
+
     for i in range(n_windows):
         t_start = (i * stride) / sfreq
         t_end = t_start + window_sec
         timestamps[i] = [t_start, t_end]
-        
-        # Check overlap with any seizure interval
+
         for s_start, s_end in intervals:
             if max(t_start, s_start) < min(t_end, s_end):
                 labels[i] = 1.0
@@ -71,11 +71,10 @@ def prepare_labeled_windows(
     x_tensor = torch.from_numpy(norm_windows).float()
     y_tensor = torch.from_numpy(labels).float()
     t_tensor = torch.from_numpy(timestamps).float()
-    
+
     n_seiz = int(labels.sum())
-    print(f"Total windows: {n_windows} | Seizure windows: {n_seiz} ({n_seiz/n_windows*100:.2f}%)")
-    
-    # Cache processed dataset
+    print(f"  Processed {n_windows} windows: {n_windows - n_seiz} background, {n_seiz} seizure windows.")
+
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = PROCESSED_DIR / f"{edf_p.stem}_processed.pt"
     torch.save({
@@ -85,9 +84,30 @@ def prepare_labeled_windows(
         "sfreq": sfreq,
         "ch_names": ch_names,
     }, cache_file)
-    print(f"Saved processed windows cache to: {cache_file}")
-    
+
     return x_tensor, y_tensor, t_tensor
+
+
+def prepare_multi_recording_dataset(
+    target_files: List[Path],
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Combine windows across multiple EDF recordings from one or more CHB subjects."""
+    all_x, all_y, all_t = [], [], []
+    for edf in target_files:
+        x, y, t = prepare_recording_windows(edf)
+        all_x.append(x)
+        all_y.append(y)
+        all_t.append(t)
+
+    combined_x = torch.cat(all_x, dim=0)
+    combined_y = torch.cat(all_y, dim=0)
+    combined_t = torch.cat(all_t, dim=0)
+
+    print(f"\nMulti-recording dataset combined:")
+    print(f"  Total recordings: {len(target_files)}")
+    print(f"  Total windows:    {len(combined_x)}")
+    print(f"  Total seizure windows: {int(combined_y.sum())}")
+    return combined_x, combined_y, combined_t
 
 
 def train_eeg_encoder(
@@ -100,9 +120,8 @@ def train_eeg_encoder(
 ) -> EEGEncoder:
     """Train 1D-CNN + BiLSTM EEGEncoder with balanced class weighting."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\nTraining EEGEncoder on {device}...")
+    print(f"\nTraining EEGEncoder on {device} ({len(x)} windows)...")
 
-    # Class weighting to handle extreme imbalance (majority background vs minority seizure)
     n_pos = float(y.sum())
     n_neg = float(len(y) - n_pos)
     pos_weight = torch.tensor([n_neg / max(1.0, n_pos)]).to(device)
@@ -126,7 +145,7 @@ def train_eeg_encoder(
             loss.backward()
             optimizer.step()
             total_loss += loss.item() * len(batch_y)
-        
+
         scheduler.step()
         avg_loss = total_loss / len(dataset)
         if ep % 3 == 0 or ep == epochs:
@@ -152,7 +171,7 @@ def train_eeg_encoder(
     sensitivity = true_pos / max(1, true_pos + false_neg)
     specificity = true_neg / max(1, true_neg + false_pos)
 
-    print("\n--- Model Evaluation on Training Recording ---")
+    print("\n--- Model Evaluation on Combined Dataset ---")
     print(f"Sensitivity (Recall): {sensitivity * 100:.1f}%")
     print(f"Specificity:          {specificity * 100:.1f}%")
     print(f"True Positives: {true_pos} | False Negatives: {false_neg}")
@@ -166,20 +185,43 @@ def train_eeg_encoder(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="EEG Window Processor & Model Trainer")
-    parser.add_argument("--edf", default=str(DEFAULT_EDF), help="Path to EDF recording")
+    parser = argparse.ArgumentParser(description="Multi-Subject EEG Processor & Model Trainer")
+    parser.add_argument("--all", action="store_true", help="Train on all available local EDF files across subjects")
+    parser.add_argument("--subjects", nargs="+", help="Specific subjects to include, e.g. --subjects chb01 chb02")
+    parser.add_argument("--edf", type=str, default=None, help="Train on specific EDF recording path")
     parser.add_argument("--epochs", type=int, default=12, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     args = parser.parse_args()
 
+    reg = get_chb_registry()
+    local_recordings = reg.list_local_recordings()
+
+    if not local_recordings:
+        print("No local EDF recordings found. Please run download_chbmit.py first.")
+        return
+
+    if args.edf:
+        target_files = [Path(args.edf)]
+    elif args.subjects:
+        subjs = [s.lower() for s in args.subjects]
+        target_files = [m.local_path for m in local_recordings if m.subject_id.lower() in subjs and m.local_path]
+    elif args.all:
+        target_files = [m.local_path for m in local_recordings if m.local_path]
+    else:
+        # Default to all locally available recordings
+        target_files = [m.local_path for m in local_recordings if m.local_path]
+
     print("=" * 80)
-    print("EEG DATABASE PROCESSOR & MODEL TRAINING")
+    print("CHB-MIT MULTI-SUBJECT EEG DATASET TRAINER")
+    print(f"Target recordings ({len(target_files)}): {[f.name for f in target_files]}")
     print("=" * 80)
-    x, y, t = prepare_labeled_windows(args.edf)
+
+    x, y, t = prepare_multi_recording_dataset(target_files)
     train_eeg_encoder(x, y, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr)
+
     print("=" * 80)
-    print("EEG Database window caching and model training completed!")
+    print("Multi-Subject EEG Training Completed Successfully!")
     print("=" * 80)
 
 

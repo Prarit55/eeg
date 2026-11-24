@@ -1,15 +1,17 @@
 """
 High-level EEG processing pipeline wrapper.
+Supports dynamic multi-subject discovery from the complete PhysioNet CHB-MIT dataset.
 """
 from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 
+from src.eeg.chb_registry import get_chb_registry
 from src.eeg.loader import N_CHANNELS, SFREQ, load_and_filter_edf
 from src.eeg.models import EMBED_DIM, EEGEncoder
 from src.eeg.preprocessor import (
@@ -21,8 +23,8 @@ from src.eeg.preprocessor import (
     segment_windows,
 )
 
-DUMMY_EDF_PATH: str = "data/raw/eeg/chb01/chb01_03.edf"
 DEFAULT_WEIGHTS_PATH: str = str(Path(__file__).resolve().parent.parent.parent / "data" / "processed" / "eeg_encoder.pt")
+DUMMY_EDF_PATH: str = "data/raw/eeg/chb01/chb01_03.edf"
 
 
 class EEGPipeline:
@@ -37,6 +39,8 @@ class EEGPipeline:
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.batch_size = batch_size
         self.model = EEGEncoder().to(self.device)
+        self.registry = get_chb_registry()
+
         target_weights = weights_path or DEFAULT_WEIGHTS_PATH
         if target_weights and Path(target_weights).exists():
             self.model.load_state_dict(torch.load(target_weights, map_location=self.device))
@@ -44,33 +48,47 @@ class EEGPipeline:
             warnings.warn("EEGPipeline: no trained weights found - using a randomly initialised encoder.")
         self.model.eval()
 
-    def load_windows(self, edf_path: Optional[str] = None) -> torch.Tensor:
-        """Return normalised windows, shape (n_windows, 23, 1024). Falls back to dummy data."""
-        target_edf = edf_path or DUMMY_EDF_PATH
-        if target_edf and Path(target_edf).exists():
-            data, _, _ = load_and_filter_edf(target_edf)
+    def resolve_recording(self, edf_path: Optional[str] = None) -> Tuple[Optional[Path], Optional[str], List[Tuple[int, int]]]:
+        """Dynamically resolve any EDF recording identifier from the complete CHB dataset."""
+        local_p = self.registry.find_local_recording(edf_path)
+        if local_p:
+            meta = self.registry.get_recording_meta(local_p.name)
+            subj_id = meta.subject_id if meta else local_p.parent.name
+            intervals = meta.seizure_intervals if meta else []
+            return local_p, subj_id, intervals
+        return None, None, []
+
+    def load_windows(self, edf_path: Optional[str] = None) -> Tuple[torch.Tensor, Optional[Path], Optional[str], List[Tuple[int, int]]]:
+        """Return normalised windows and recording metadata. Falls back to synthetic dummy EEG if no file found."""
+        resolved_p, subj_id, ground_truth_intervals = self.resolve_recording(edf_path)
+        if resolved_p and resolved_p.exists():
+            data, _, _ = load_and_filter_edf(str(resolved_p))
         else:
-            warnings.warn(f"EEG file '{target_edf}' not found - using synthetic dummy EEG.")
+            warnings.warn(f"EEG file '{edf_path}' not found - using synthetic dummy EEG.")
             data = make_dummy_eeg()
+            subj_id = "synthetic"
+            ground_truth_intervals = []
+
         windows = normalize_windows(segment_windows(data))
-        return torch.from_numpy(windows).float()
+        return torch.from_numpy(windows).float(), resolved_p, subj_id, ground_truth_intervals
 
     @torch.no_grad()
-    def analyze(self, edf_path: Optional[str] = None) -> Dict[str, torch.Tensor]:
-        windows = self.load_windows(edf_path)                       # (W, 23, 1024)
+    def analyze(self, edf_path: Optional[str] = None) -> Dict[str, Any]:
+        windows, local_path, subj_id, ground_truth_intervals = self.load_windows(edf_path)
         logits, zs = [], []
         for i in range(0, len(windows), self.batch_size):
-            batch = windows[i:i + self.batch_size].to(self.device)  # (B, 23, 1024)
-            logit, z = self.model(batch)                            # (B,), (B, 128)
+            batch = windows[i:i + self.batch_size].to(self.device)
+            logit, z = self.model(batch)
             logits.append(logit.cpu())
             zs.append(z.cpu())
-        logits_t = torch.cat(logits)                                # (W,)
-        z_t = torch.cat(zs)                                         # (W, 128)
-        probs = torch.sigmoid(logits_t)                             # (W,)
-        
+
+        logits_t = torch.cat(logits) if logits else torch.empty(0)
+        z_t = torch.cat(zs) if zs else torch.empty(0, EMBED_DIM)
+        probs = torch.sigmoid(logits_t)
+
         # Calculate detected temporal event intervals (stride = 2 sec)
         seizure_indices = (probs > 0.5).nonzero(as_tuple=True)[0]
-        detected_intervals = []
+        detected_intervals: List[Tuple[int, int]] = []
         if len(seizure_indices) > 0:
             start_idx = seizure_indices[0].item()
             prev_idx = start_idx
@@ -84,9 +102,12 @@ class EEGPipeline:
 
         return {
             "n_windows": torch.tensor(len(windows)),
-            "logits": logits_t,                                     # (W,)
-            "seizure_prob": probs,                                  # (W,)
-            "z_eeg": z_t,                                           # (W, 128)
-            "z_patient": z_t.mean(dim=0, keepdim=True),             # (1, 128) recording-level embedding
+            "logits": logits_t,
+            "seizure_prob": probs,
+            "z_eeg": z_t,
+            "z_patient": z_t.mean(dim=0, keepdim=True) if len(z_t) > 0 else torch.zeros(1, EMBED_DIM),
             "detected_intervals_sec": detected_intervals,
+            "ground_truth_intervals_sec": ground_truth_intervals,
+            "file_name": local_path.name if local_path else "synthetic",
+            "subject_id": subj_id or "unknown",
         }
