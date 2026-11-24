@@ -251,6 +251,23 @@ class CHBRegistry:
                 res.append(m)
         return res
 
+    def sync_from_hf(self, repo_id: str, token: Optional[str] = None) -> bool:
+        """Download or sync dataset from a Hugging Face dataset repository."""
+        try:
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                local_dir=str(self.data_dir),
+                token=token,
+                max_workers=6,
+            )
+            self.refresh_local_files()
+            return True
+        except Exception as e:
+            print(f"[HF Sync Error]: {e}")
+            return False
+
 
 # Global singleton
 _REGISTRY: Optional[CHBRegistry] = None

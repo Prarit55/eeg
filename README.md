@@ -1,6 +1,7 @@
 # Query-Adaptive Multimodal Self-RAG for Evidence-Grounded Medical Reasoning in Epilepsy Analysis
 
 [![Live Demo](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-cyan?style=for-the-badge&logo=github)](https://prarit55.github.io/eeg/)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-CHB--MIT%20Dataset-yellow?style=for-the-badge&logo=huggingface)](https://huggingface.co/datasets/parthsaini333/chbmit-eeg)
 [![Unit Tests](https://img.shields.io/badge/Unit%20Tests-19%2F19%20Passing%20(100%25)-emerald?style=for-the-badge&logo=checkmarx)](https://github.com/Prarit55/eeg)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red?style=for-the-badge&logo=pytorch)](https://pytorch.org)
@@ -190,6 +191,18 @@ This repository fully implements all 7 core objectives outlined in the Minor Pro
 ### 4. ChromaDB Vector Store & Clinical Guidelines
 - **Embedding Model**: `BAAI/bge-small-en-v1.5` (384-dimensional dense semantic vectors).
 - **Indexed Literature**: Persistent database (`data/vector_db/chroma.sqlite3`) indexing ILAE 2017 Operational Classification, AES Clinical Guidelines, and the Comprehensive EEG Interpretation Handbook.
+
+### 5. Hugging Face Datasets Integration
+- **Dataset Hub**: [parthsaini333/chbmit-eeg](https://huggingface.co/datasets/parthsaini333/chbmit-eeg)
+- **Role**: Free, cloud-native hosting for the complete 42.6 GB multi-subject CHB-MIT dataset without git file size restrictions.
+- **1-Click Pull Command**:
+  ```powershell
+  python scripts/pull_from_hf.py --repo-id parthsaini333/chbmit-eeg
+  ```
+- **1-Click Push / Update Command**:
+  ```powershell
+  python scripts/push_to_hf.py --repo-id parthsaini333/chbmit-eeg --token <HF_TOKEN> --public
+  ```
 
 ---
 

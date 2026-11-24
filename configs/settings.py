@@ -72,6 +72,11 @@ class APIConfig(BaseModel):
     port: int = 8000
 
 
+class HuggingFaceConfig(BaseModel):
+    dataset_repo_id: str = "parthsaini333/chbmit-eeg"
+    auto_download_fallback: bool = True
+
+
 class AppSettings(BaseModel):
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
@@ -81,6 +86,7 @@ class AppSettings(BaseModel):
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     self_rag: SelfRAGConfig = Field(default_factory=SelfRAGConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+    huggingface: HuggingFaceConfig = Field(default_factory=HuggingFaceConfig)
 
 
 def load_config(config_path: Optional[Path] = None) -> AppSettings:

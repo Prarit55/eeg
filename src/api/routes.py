@@ -76,4 +76,16 @@ def get_router():
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @router.get("/api/v1/dataset/info")
+    def dataset_info():
+        reg = _eeg_instance.registry
+        local = reg.list_local_recordings()
+        return {
+            "dataset": "PhysioNet CHB-MIT Scalp EEG Database",
+            "huggingface_hub": "https://huggingface.co/datasets/parthsaini333/chbmit-eeg",
+            "total_local_recordings": len(local),
+            "total_subjects": len(reg.subjects),
+            "seizure_recordings": len(reg.list_all_seizure_recordings()),
+        }
+
     return router

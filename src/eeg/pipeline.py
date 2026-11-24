@@ -49,8 +49,25 @@ class EEGPipeline:
         self.model.eval()
 
     def resolve_recording(self, edf_path: Optional[str] = None) -> Tuple[Optional[Path], Optional[str], List[Tuple[int, int]]]:
-        """Dynamically resolve any EDF recording identifier from the complete CHB dataset."""
+        """Dynamically resolve any EDF recording identifier from the complete CHB dataset, with HF on-demand fallback."""
         local_p = self.registry.find_local_recording(edf_path)
+        if not local_p and edf_path:
+            meta = self.registry.get_recording_meta(edf_path)
+            if meta:
+                # Seamless on-demand fetch from Hugging Face hub if missing locally
+                try:
+                    from huggingface_hub import hf_hub_download
+                    dl_file = hf_hub_download(
+                        repo_id="parthsaini333/chbmit-eeg",
+                        filename=meta.relative_path,
+                        repo_type="dataset",
+                        local_dir=str(self.registry.data_dir),
+                    )
+                    local_p = Path(dl_file)
+                    self.registry.refresh_local_files()
+                except Exception:
+                    pass
+
         if local_p:
             meta = self.registry.get_recording_meta(local_p.name)
             subj_id = meta.subject_id if meta else local_p.parent.name

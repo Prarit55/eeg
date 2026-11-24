@@ -608,6 +608,10 @@
         <div class="status-dot"></div>
         <span>Clinical Assistant Ready</span>
       </div>
+      <a href="https://huggingface.co/datasets/parthsaini333/chbmit-eeg" target="_blank" class="btn-outline" style="border-color: rgba(234, 179, 8, 0.4); color: #fef08a;">
+        <i class="fa-solid fa-database" style="color: #eab308;"></i>
+        <span>Hugging Face Dataset</span>
+      </a>
       <a href="https://github.com/Prarit55/eeg" target="_blank" class="btn-outline">
         <i class="fa-brands fa-github"></i>
         <span>Repository</span>
@@ -894,7 +898,27 @@
       runAnalysis();
     }
 
-    function runAnalysis() {
+    async function runAnalysis() {
+      const query = document.getElementById('queryInput').value;
+      const history = document.getElementById('patientContext').value;
+      const fileName = document.getElementById('loadedFileName').innerText;
+
+      // Try communicating with live FastAPI backend if available
+      try {
+        const liveCheck = await fetch('http://127.0.0.1:8000/api/v1/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query, edf_path: fileName, patient_history: history })
+        });
+        if (liveCheck.ok) {
+          const apiRes = await liveCheck.json();
+          console.log('[Live Backend]: Connected to FastAPI & Hugging Face hub', apiRes);
+        }
+      } catch (e) {
+        // Fallback to standalone client simulation (GitHub Pages mode)
+        console.log('[Standalone Mode]: Running client-side decision engine');
+      }
+
       const data = caseData[currentCase];
 
       // Update Header stats

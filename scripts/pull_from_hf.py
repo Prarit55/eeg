@@ -18,7 +18,7 @@ DEFAULT_DEST_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "ee
 
 def main():
     parser = argparse.ArgumentParser(description="Download EEG dataset from Hugging Face")
-    parser.add_argument("--repo-id", type=str, required=True, help="HF dataset repo ID, e.g. 'username/chbmit-eeg'")
+    parser.add_argument("--repo-id", type=str, default="parthsaini333/chbmit-eeg", help="HF dataset repo ID (default: 'parthsaini333/chbmit-eeg')")
     parser.add_argument("--dest", type=str, default=str(DEFAULT_DEST_DIR), help="Destination folder on disk")
     parser.add_argument("--token", type=str, default=None, help="Hugging Face access token (required if private repo)")
     args = parser.parse_args()
