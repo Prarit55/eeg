@@ -19,3 +19,4 @@ reportlab
 fastapi
 uvicorn
 pytest
+gunicorn
